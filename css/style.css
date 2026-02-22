@@ -1,0 +1,225 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+:root {
+  --text: #1a1a1a;
+  --muted: #555;
+  --border: #ddd;
+  --bg: #fff;
+  --max-width: 720px;
+  --font-serif: Georgia, 'Times New Roman', serif;
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+}
+
+html { font-size: 18px; }
+
+body {
+  font-family: var(--font-serif);
+  color: var(--text);
+  background: var(--bg);
+  margin: 0;
+  padding: 0;
+  line-height: 1.7;
+}
+
+.site-header {
+  padding: 2rem 1.5rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+
+.site-header a {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.site-header a:hover { text-decoration: underline; }
+
+nav {
+  margin-top: 0.5rem;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+}
+
+nav a {
+  color: var(--muted);
+  text-decoration: none;
+  margin-right: 1.5rem;
+  font-weight: 400;
+}
+
+nav a:hover { color: var(--text); }
+
+main {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+h1 {
+  font-family: var(--font-sans);
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1.3;
+  margin: 0 0 0.5rem;
+}
+
+h2 {
+  font-family: var(--font-sans);
+  font-size: 1.2rem;
+  font-weight: 600;
+  margin: 2.5rem 0 0.75rem;
+  line-height: 1.4;
+}
+
+h3 {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 2rem 0 0.5rem;
+}
+
+p { margin: 0 0 1.25rem; }
+
+a { color: var(--text); }
+
+a:hover { color: #000; }
+
+.subtitle {
+  font-family: var(--font-sans);
+  font-size: 0.95rem;
+  color: var(--muted);
+  margin-bottom: 2rem;
+}
+
+.meta {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 2.5rem;
+}
+
+blockquote {
+  border-left: 3px solid var(--border);
+  margin: 1.5rem 0;
+  padding: 0.25rem 1.25rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+blockquote p { margin-bottom: 0; }
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2.5rem 0;
+}
+
+ul, ol {
+  padding-left: 1.5rem;
+  margin: 0 0 1.25rem;
+}
+
+li { margin-bottom: 0.4rem; }
+
+strong { font-weight: 700; }
+
+.writing-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.writing-list li {
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.writing-list li:first-child { border-top: 1px solid var(--border); }
+
+.writing-list .item-title {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.writing-list .item-meta {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+.writing-list .item-desc {
+  font-size: 0.95rem;
+  color: var(--muted);
+  margin: 0;
+}
+
+.book-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.book-list li {
+  padding: 1.25rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.book-list li:first-child { border-top: 1px solid var(--border); }
+
+.book-list .item-title {
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.book-list .item-meta {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+.download-link {
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  display: inline-block;
+  margin-top: 1.5rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  text-decoration: none;
+  color: var(--muted);
+}
+
+.download-link:hover {
+  border-color: var(--text);
+  color: var(--text);
+}
+
+.site-footer {
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: 1.5rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+@media (max-width: 600px) {
+  html { font-size: 16px; }
+  main { padding: 2rem 1rem 3rem; }
+  .site-header { padding: 1.5rem 1rem 1rem; }
+}
