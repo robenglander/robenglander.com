@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Engineering Natural Language Interfaces: Compiling Intent — Robert Englander</title>
+  <meta name="description" content="A practitioner survey of approaches for building natural language interfaces that compile user intent into validated commitments — classical pipelines, constrained decoding, logprob overlays, and judge-based confidence mechanisms.">
+  <link rel="stylesheet" href="/css/style.css">
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-0KFMH9WVRH"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-0KFMH9WVRH');
+  </script>
+</head>
+<body>
+
+<header class="site-header">
+  <a href="/">Robert Englander</a>
+  <nav>
+    <a href="/writing/">Writing</a>
+    <a href="/books/">Books</a>
+  </nav>
+</header>
+
+<main>
+  <article>
+
+    <h1>Engineering Natural Language Interfaces: Compiling Intent</h1>
+    <div class="meta">2026</div>
+
+    <p>People want to talk to software the way they talk to people. That is a reasonable user experience goal. It becomes an engineering problem the moment you need the system to do something with what was said: run a query, change a setting, start a retirement scenario, file a ticket. At that boundary, fluency stops being the point. The point is a commitment: a small, typed, testable representation of what the user asked for, plus an explicit policy for what happens when the commitment is incomplete, ambiguous, or unsafe.</p>
+
+    <p>The challenge is that conversational fluency can easily create the illusion of correctness. A system that sounds confident can still misunderstand the user&rsquo;s intent, violate business rules, or produce an operation that should never have been allowed to commit. The risk spikes when the interface stops being chat and starts driving authoritative operations against real systems.</p>
+
+    <p>This article surveys practical approaches for building that commitment layer. It is written for engineers who are tired of &ldquo;the model understood&rdquo; as a substitute for &ldquo;the system can prove what it understood.&rdquo; Treat natural language as an input surface that must compile into an explicit intermediate representation (call it intent JSON, an IR, or a command object), then validate it the way you would validate any other external input. Nothing here depends on a particular runtime language; the same gates apply whether your clients are in Java, Python, Go, or something else.</p>
+
+    <p>The survey covers classical grammar-first pipelines, constrained decoding with grammars such as GBNF, structured JSON outputs, tool calling, dialog state for clarification, chain-of-thought as a technique with sharp limits, local versus frontier models, and two confidence mechanisms that are largely independent of which parser you picked: logprob overlays and, when those are unavailable, LLM-as-judge verification.</p>
+
+    <h2>Start with the contract</h2>
+
+    <p>If you skip this step, comparisons between techniques become meaningless. You need a shared definition of output quality that is not &ldquo;sounds right.&rdquo;</p>
+
+    <p>Fix the output contract before you argue about parsers. A workable one has four parts.</p>
+
+    <p>First, a canonical schema. Not ad hoc JSON, but a versioned structure with enums, required fields, mutually exclusive options where that applies, and stable naming. This is the artifact every approach must produce or die trying.</p>
+
+    <p>Second, a mechanical gate: structural validation. If the bytes are not valid JSON for the schema, you do not proceed. This catches a surprising amount of &ldquo;almost right&rdquo; damage early.</p>
+
+    <p>Third, a domain gate: semantic validation. Examples: amounts must be positive in contexts where negative is impossible; tax years must fall in supported ranges; mutually exclusive flags cannot both be set. Structural validation alone cannot express all of this; your domain layer must.</p>
+
+    <p>Fourth, conversational outcomes beyond success. At minimum: clarify (ask a targeted question) and reject (refuse with a reason code). Clarification is not failure. It is often the correct product behavior when the user under-specified a dangerous or expensive action.</p>
+
+    <p>Once that contract exists, every technique in this article is just a different front compiler from text to the same object, plus optional confidence machinery layered on top.</p>
+
+    <h2>Classical compilation</h2>
+
+    <p>The oldest credible approach is still the sharpest for a narrow domain slice: treat user language as a controlled language compiled by deterministic machinery.</p>
+
+    <p>A grammar (PEG, ANTLR, Xtext, etc.) defines the syntax of acceptable utterances after normalization. A lexicon handles paraphrase by mapping surface phrases to canonical forms the grammar actually consumes: &ldquo;required minimum distribution&rdquo; to <code>RMD</code>, &ldquo;key performance indicator&rdquo; to <code>KPI</code>, and so on. A spelling layer such as symmetric-delete fuzzy matching applies only where it belongs: short tokens from a closed vocabulary, never arbitrary numeric fields.</p>
+
+    <p>This stack separates concerns in a way that is easy to explain to newcomers and easy to debug when production misbehaves. Misspellings are largely a spelling problem. Paraphrase is largely a dictionary problem. Missing information is a dialog policy problem: you map parse failures and ambiguity classes to specific clarification prompts, not to a generic &ldquo;try again.&rdquo;</p>
+
+    <p>When the grammar cannot parse an utterance, the failure is explicit and classifiable: an unknown token lands in the spelling layer, an unrecognized phrase hits a lexicon miss, a structurally incomplete input triggers a missing-slot dialog prompt. Nothing silently succeeds. That predictability is the real advantage over probabilistic approaches &mdash; failures announce themselves and route to specific handlers rather than producing a confident wrong answer.</p>
+
+    <p>The weaknesses are real and well-defined. You pay maintenance for grammar and lexicon. Coverage of novel phrasing is only as good as your curation and thresholds. The system will ask for clarification more often than a large model might &mdash; but that can be a virtue if false certainty is expensive.</p>
+
+    <h2>GBNF and constrained decoding</h2>
+
+    <p>When you add a language model, the first temptation is to let it speak freely. The first corrective is to restrict what it is allowed to emit.</p>
+
+    <p>GBNF names a grammar-constrained decoding format that restricts token sampling so the model emits only strings matching a supplied grammar. Similar ideas appear elsewhere under different names; what matters is the constraint: the tokenizer stream stays inside a declared language. In local stacks, this is commonly wired through llama.cpp-family servers and sometimes through higher-level runtimes such as Ollama, with varying feature parity and parameter forwarding depending on client libraries.</p>
+
+    <p>What constrained grammar buys you is strong control over the shape of the emitted text. If your target is a small DSL, a rigid JSON skeleton, or an enumerated template language, constrained decoding can nearly eliminate malformed syntax.</p>
+
+    <p>What it does not buy you is automatic correctness of meaning. A grammar with too much freedom still admits many strings. Two different valid parses may exist. The model may choose the wrong branch while remaining grammatical. A JSON-shaped grammar can still populate the wrong enum value.</p>
+
+    <p>So the engineering pattern is: constrained decode &rarr; interpret as structured output (parse JSON or equivalent) &rarr; structural validate &rarr; semantic and business-rule validate &rarr; clarify or commit. Treat grammar constraints as lint for token streams, not as a proof of user intent.</p>
+
+    <p>There is also a practical split: local llama-server versus Ollama (and others). The question is not only &ldquo;does the server support grammar?&rdquo; but &ldquo;does your HTTP client or LangChain-style wrapper actually forward the grammar field?&rdquo; Many integration bugs live in that gap.</p>
+
+    <h2>JSON Schema / structured outputs</h2>
+
+    <p>Many frontier APIs and some local stacks advertise structured outputs, often via JSON Schema or a vendor-specific cousin. Practically, this is easier for many teams than maintaining a separate grammar artifact, especially when the output is naturally JSON-shaped. The ergonomics are better. The failure mode is identical: schema-valid JSON can still be wrong for the user&rsquo;s actual intent &mdash; wrong account, wrong year, wrong action verb that still matches an enum. The same pipeline applies: structural validation is the floor, semantic and business-rule validation is required, and metrics belong at the slot level, not only &ldquo;parse succeeded.&rdquo;</p>
+
+    <h2>Tool calling vs raw JSON</h2>
+
+    <p>Tool calling (function calling) packages the model&rsquo;s decision as a structured call: a tool name and arguments. A host loop can execute tools, append results, and continue until a terminal condition.</p>
+
+    <p>Compared to &ldquo;emit one JSON blob,&rdquo; tool calling changes the shape of control flow more than it changes fundamental limits. It can improve reliability when you decompose the problem into steps with smaller payloads per call &mdash; for example, first classify intent with a narrow tool, then fill slots with a second tool whose schema is only valid in that branch.</p>
+
+    <p>Tool calling introduces its own failure modes: wrong tool chosen, plausible arguments for the wrong tool, loops that do not converge, and hidden complexity in client libraries. In addition, tools are often side-effectful: the loop needs permission checks, safe retries, and idempotency wherever the model might repeat a call.</p>
+
+    <p>For benchmarking, the important discipline is: map every path &mdash; classical lowering, raw JSON, tool arguments &mdash; into the same canonical intent object before you score. Otherwise you are comparing serializers, not understanding pipelines.</p>
+
+    <h2>Chain-of-thought (keep it diagnostic)</h2>
+
+    <p>Chain-of-thought (CoT) asks the model to produce intermediate reasoning text before the final answer.</p>
+
+    <p>For intent capture, CoT can help on genuinely gnarly disambiguation if the final commitment is still forced through structural, semantic, and business-rule validation, and if the reasoning text is treated as diagnostic, not as an output your business logic consumes.</p>
+
+    <p>The failure mode is about people and process as much as code: teams start trusting the &ldquo;because&rdquo; paragraph, users start believing explanations that were not grounded in validated facts, and reviewers confuse eloquence with correctness.</p>
+
+    <p>A clean policy: only the compiled intent crosses the trust boundary. CoT belongs in logs, traces, and optional UI &ldquo;explain why&rdquo; features that are clearly labeled as model-generated inference, not as authoritative explanation. Wire those surfaces carefully: it is easy to leak chain-of-thought into user-visible text by mistake if the UI binds the wrong message field.</p>
+
+    <h2>Dialog state</h2>
+
+    <p>Even perfect one-shot parsers rarely suffice. Users omit details. Ambiguity is real. Policies differ by risk.</p>
+
+    <p>You need explicit dialog state: which slots are bound, which candidate interpretations remain, which clarification question is outstanding, how many turns you allow, and what &ldquo;give up&rdquo; looks like.</p>
+
+    <p>Good dialog engineering is not generic chit-chat. It is a small state machine keyed off failure classes: unknown token, ambiguous parse, missing required slot, conflicting slots, domain rule violation after parse.</p>
+
+    <p>The mapping is roughly: unknown token &rarr; spelling or lexicon retry, or clarify; ambiguous parse &rarr; disambiguation question (&ldquo;Did you mean X or Y?&rdquo;); missing required slot &rarr; targeted slot-fill question; conflicting slots &rarr; reject with a specific reason code (do not ask the user to resolve a contradiction they may not understand); domain rule violation after parse &rarr; reject with the violated rule stated plainly.</p>
+
+    <p>Your evaluation harness should measure clarification quality, not only final success rate. Two metrics matter as much as top-line accuracy:</p>
+
+    <ul>
+      <li>False clarify rate: the system asks for help when the user already supplied enough information.</li>
+      <li>False certainty rate: the system commits when it should have asked.</li>
+    </ul>
+
+    <p>Classical stacks and LLM stacks both need this layer. The only difference is whether candidate intents come from a parser or from a model.</p>
+
+    <h2>Logprob overlays</h2>
+
+    <p>Many inference stacks expose per-token log probabilities (logprobs) alongside generated text. Even when the final string parses and validates, logprobs give you a second signal: where the model was mechanically uncertain during sampling.</p>
+
+    <p>A logprob overlay is not a user interface gimmick. It is an engineering artifact: align logprobs with tokens, map spans to fields in your intent object, and compute aggregates such as minimum logprob over a span, mean logprob for a slot filler, or other coarse uncertainty summaries for a segment.</p>
+
+    <p>A minimal pseudo-algorithm useful in implementation:</p>
+
+    <ol>
+      <li>Tokenize the completion with the same tokenizer the runtime used for scoring.</li>
+      <li>For each generated token position, record <code>logprob(token)</code> (or the provider&rsquo;s equivalent).</li>
+      <li>Map character spans in the completion JSON to token index ranges. This is the hard part: tokenizers do not split on JSON boundaries. A field value like <code>"ROTH_IRA"</code> might tokenize as <code>["ROTH", "_", "IRA"]</code> or as a single token, depending on the model and its vocabulary. Use the tokenizer&rsquo;s offset API if it exposes character positions, or walk the raw logprob stream against the completion string character by character, accumulating token spans until they cover the field&rsquo;s character range. Watch especially for escaped Unicode sequences and nested objects, where character offsets in the completion string can diverge from what the tokenizer saw.</li>
+      <li>For each schema field you care about, compute a scalar score &mdash; for example, <code>min_logprob(field)</code> or <code>sum_logprob(field) / len(field_tokens)</code>.</li>
+      <li>Apply field-type thresholds: identifiers and enums might use stricter floors than free-text <code>note</code> fields.</li>
+    </ol>
+
+    <p>What overlays are good for:</p>
+
+    <ul>
+      <li>Routing: low confidence on a critical slot triggers clarify instead of commit.</li>
+      <li>Second-pass triage: only send low-confidence spans to a stronger model or a human review queue.</li>
+      <li>Debugging: show developers which words made the model hesitate, which is often faster than reading a whole completion.</li>
+    </ul>
+
+    <p>What overlays are not:</p>
+
+    <ul>
+      <li>They are not calibrated probabilities you should treat like trustworthy percentages. A model can be confidently wrong with high logprob, or hesitant on benign tokens depending on tokenizer quirks and training.</li>
+    </ul>
+
+    <p>So overlays are best used as relative indicators and gates, not as proof of truth. The engineering posture is conservative: when the overlay says &ldquo;this span is shaky,&rdquo; you spend extra compute or ask a question; when it says &ldquo;confident,&rdquo; you still validate structurally.</p>
+
+    <h2>No logprobs: judges and substitutes</h2>
+
+    <p>Many production setups &mdash; especially some frontier APIs &mdash; either do not expose logprobs or expose them inconsistently across models. Your confidence layer still needs a strategy.</p>
+
+    <p>Common substitutes:</p>
+
+    <p>LLM-as-judge. A second call (sometimes a smaller, cheaper model) receives the user utterance, the candidate intent JSON, and a rubric: check internal consistency, check whether filled fields are actually justified by the utterance, flag unsupported inferences, and output a verdict such as <code>{accept, clarify, reject}</code> plus machine-readable reasons. A compact rubric might require the judge to answer only: (1) Are all filled slots explicitly supported by the utterance or dialog context? (2) Is any required information missing? (3) Is there an internal contradiction? (4) Would executing this intent exceed the user&rsquo;s stated constraints?</p>
+
+    <p>Rubric quality determines judge quality. A loose rubric (&ldquo;does this seem right?&rdquo;) produces unreliable verdicts. A tight rubric specifies exactly what counts as an unsupported inference (a slot value not derivable from the utterance or dialog context), enumerates the verdict values and their semantics, and requires machine-readable output, not a paragraph of explanation. Test your rubric the same way you test a parser: build a small labeled set of (utterance, intent, expected verdict) triples and measure judge accuracy against it before trusting it in production.</p>
+
+    <p>Self-consistency sampling. Generate multiple candidate intents at non-zero temperature (or with small perturbations), then vote or reconcile. This approximates uncertainty without logprobs, at higher cost.</p>
+
+    <p>Retriever-in-the-loop checks. If your domain has canonical entities, verify that every resolved entity id exists in a database or catalog.</p>
+
+    <p>Lightweight classifiers on hand-crafted features can sometimes gate obvious nonsense cheaper than a second LLM call.</p>
+
+    <p>The judge model pattern trades cost and latency for coverage of &ldquo;sounds valid JSON, wrong meaning.&rdquo; It inherits the judge&rsquo;s blind spots: it can rubber-stamp, it can be overly harsh, and it adds another nondeterministic component unless you pin prompts and temperature.</p>
+
+    <p>Tradeoffs in cost and latency: per-token logprobs, when available, are essentially free once you pay for the primary completion; logprobs favor continuous gating on every request. A judge adds another round trip (and billable tokens). Self-consistency multiplies completions by k, which is the most expensive on both dimensions. Choose based on how expensive a silent wrong intent is versus how expensive each millisecond and cent is at your scale.</p>
+
+    <p>A pragmatic hybrid: use logprobs when available for cheap continuous gating; fall back to judge or voting when not; always keep structural, semantic, and business-rule validation as the baseline that never depends on model self-assessment.</p>
+
+    <h2>Local vs frontier</h2>
+
+    <p>Local models (often quantized, served via llama-server, Ollama, vLLM, etc.) buy data locality, predictable cost curves, offline operation for some setups, and tight iteration loops. Constraint features and logprob access are implementation-dependent and should be treated as part of the integration contract.</p>
+
+    <p>Frontier models buy broader linguistic coverage and strong adherence to formatting instructions when the vendor stack cooperates. The recurring failure mode is worse in a subtle way: confident structural validity with wrong semantics, especially on rare edge cases in your domain.</p>
+
+    <p>The comparison that matters for engineering is not a moral ranking. You are balancing several goals at once: precision, recall on paraphrase, latency, dollar cost, operational complexity, regulatory constraints, and whether you can access the confidence signals you designed around.</p>
+
+    <p>Until those objectives are measured under the same intent schema and harness, debates about local versus frontier mostly reflect preference, not evidence. The next section is how to do that.</p>
+
+    <h2>Compare with a harness</h2>
+
+    <p>If you take one implementation habit from this article, take this: build a harness that scores every backend against the same canonical intent type, with bucketed test sets: canonical phrasing, typos, paraphrases, missing information (expects clarify), ambiguity (expects clarify), adversarial near-misses.</p>
+
+    <p>Adversarial near-misses are utterances that are syntactically well-formed, pass structural validation, and look plausible &mdash; but are semantically wrong in a subtle way: a paraphrase that maps to the wrong enum value, an amount that satisfies the schema but violates a business rule, or a time reference that resolves to the wrong year depending on interpretation. These are the cases most likely to slip through without a domain validation layer.</p>
+
+    <p>Report metrics separately per bucket. Log traces: raw model output, normalized text, parse diagnostics, structural validation failures, domain validation failures, overlay statistics, judge verdicts.</p>
+
+    <p>Then comparisons become engineering, not vibes.</p>
+
+    <h2>Worked example</h2>
+
+    <p>Consider:</p>
+
+    <blockquote>
+      <p>&ldquo;Move ten thousand from checking to my Roth for 2026.&rdquo;</p>
+    </blockquote>
+
+    <p>A conversational surface can appear to understand this immediately, but operationally several questions can remain open:</p>
+
+    <ul>
+      <li>Which checking account?</li>
+      <li>Does &ldquo;Roth&rdquo; mean Roth IRA, Roth 401(k), or something else?</li>
+      <li>Does &ldquo;for 2026&rdquo; mean tax year, calendar year, or plan year?</li>
+      <li>Is there contribution room, timing, or eligibility context that matters?</li>
+    </ul>
+
+    <p>Questions like contribution limits or income-dependent rules are not &ldquo;extra reasoning&rdquo; in the conversational sense. Once slots are bound, they are ordinary semantic and business-rule checks applied to the compiled intent by deterministic code you already own, or they are grounds for clarify if the utterance never fixed the needed slots.</p>
+
+    <p>A robust interface cannot stop at fluent acknowledgment. It has to move toward a validated commitment: extract entities and intent, compile to an intermediate representation, run structural validation, run semantic and business-rule validation, then commit, clarify, or reject.</p>
+
+    <p>The conversational layer helps users speak naturally; the layers underneath enforce what may legally or safely be executed. Whether that core is a simulator, a workflow engine, or a transaction processor is outside this article&rsquo;s scope, but the handoff is always the compiled intent, not the chat transcript.</p>
+
+    <p>Three compilation paths can arrive at the same JSON shape:</p>
+
+    <ul>
+      <li>A classical pipeline might normalize institutions, map &ldquo;Roth&rdquo; to <code>ROTH_IRA</code>, parse amounts and years, and emit an intent object.</li>
+      <li>A GBNF-constrained local model might emit JSON directly.</li>
+      <li>A tool-calling stack might call <code>classify_transfer</code>, then <code>fill_accounts</code>.</li>
+    </ul>
+
+    <p>The uniform pipeline is:</p>
+
+    <ol>
+      <li>Produce candidate intent, then run the standard validation gates (structural validation, then semantic and business-rule validation &mdash; for example, source account liquid, destination eligible, year in product range).</li>
+      <li>If optional confidence is enabled: apply logprob overlay thresholds on account ids and amounts, or call a judge if logprobs are missing.</li>
+      <li>Either commit, clarify (&ldquo;Which Roth account &mdash; IRA or 401(k)?&rdquo;), or reject.</li>
+    </ol>
+
+    <p>&ldquo;Which technique wins?&rdquo; matters less than &ldquo;which contract and gates every technique must pass.&rdquo; What differs is how candidate intents are generated and what confidence signals exist, not whether validation is optional.</p>
+
+    <h2>Conclusion</h2>
+
+    <p>There is no universal best way to build a natural language interface. There is a universal best discipline: define the compiled intent; validate it structurally, semantically, and against business rules where needed; measure clarification behavior; and treat confidence mechanisms &mdash; logprob overlays where available, judges or sampling where not &mdash; as optional risk reducers layered on top of structure, not replacements for it.</p>
+
+    <p>Keeping understanding on the same engineering footing as any other input path means contracts, tests, explicit uncertainty handling, and traces that let you improve the system without mythologizing it. Fluent text is cheap; binding commitments are not.</p>
+
+    <p>If you build that way, local versus frontier, GBNF versus JSON schema, and tools versus monolithic JSON become tradeoffs you can measure, not a religion you defend.</p>
+
+  </article>
+</main>
+
+<footer class="site-footer">&copy; 2026 Robert Englander &middot; <a href="mailto:robert.englander@gmail.com">robert.englander@gmail.com</a></footer>
+
+</body>
+</html>
