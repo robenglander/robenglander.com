@@ -208,6 +208,17 @@ strong { font-weight: 700; }
   color: var(--text);
 }
 
+.subscribe {
+  border-top: 1px solid var(--border);
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  font-size: 0.95rem;
+  color: var(--muted);
+}
+
+.subscribe p { margin-bottom: 0.5rem; }
+.subscribe p:last-child { margin-bottom: 0; }
+
 .site-footer {
   max-width: var(--max-width);
   margin: 0 auto;

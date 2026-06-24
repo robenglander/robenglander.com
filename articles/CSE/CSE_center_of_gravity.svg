@@ -1,0 +1,94 @@
+<svg width="980" height="620" viewBox="0 0 980 620" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#fbfdff"/>
+    </linearGradient>
+
+    <radialGradient id="coreGrad" cx="35%" cy="30%" r="75%">
+      <stop offset="0%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#0f172a"/>
+    </radialGradient>
+
+    <linearGradient id="ringTint" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#eef4ff"/>
+      <stop offset="100%" stop-color="#f5f8ff"/>
+    </linearGradient>
+
+    <filter id="shadowSoft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.06"/>
+    </filter>
+
+    <filter id="shadowCard" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.08"/>
+    </filter>
+
+    <style>
+      .label { font: 600 18px -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; fill: #0f172a; }
+      .coreText { font: 700 26px -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; fill: #ffffff; letter-spacing: 0.1px; }
+      .ringLabel { font: 600 15px -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif; fill: #475569; letter-spacing: 0.15px; }
+      .card { fill: #ffffff; stroke: #d7e0ea; stroke-width: 1.2; }
+      .cardInner { fill: none; stroke: #ffffff; stroke-opacity: 0.65; stroke-width: 1; }
+      .outerRing { fill: none; stroke: #dde6f0; stroke-width: 1.4; }
+      .innerFill { fill: url(#ringTint); opacity: 0.95; }
+      .innerDash { fill: none; stroke: #bcc8d8; stroke-width: 1.5; stroke-dasharray: 6 7; }
+      .coreHalo { fill: none; stroke: #d6e5ff; stroke-width: 2.2; opacity: 0.75; }
+    </style>
+  </defs>
+
+  <rect x="0" y="0" width="980" height="620" fill="url(#bgGrad)"/>
+
+  <!-- subtle atmosphere -->
+  <circle cx="490" cy="310" r="250" fill="#f8fbff"/>
+  <circle cx="490" cy="310" r="222" class="outerRing"/>
+  <circle cx="490" cy="310" r="166" class="innerFill"/>
+  <circle cx="490" cy="310" r="166" class="innerDash"/>
+
+  <text x="490" y="182" text-anchor="middle" class="ringLabel">LLM-assisted</text>
+
+  <!-- core -->
+  <g filter="url(#shadowSoft)">
+    <circle cx="490" cy="310" r="108" fill="url(#coreGrad)"/>
+    <circle cx="490" cy="310" r="113.5" class="coreHalo"/>
+  </g>
+  <text x="490" y="318" text-anchor="middle" class="coreText">Compiled Spec</text>
+
+  <!-- satellites -->
+  <g filter="url(#shadowCard)">
+    <g>
+      <rect x="390" y="94" width="200" height="56" rx="18" class="card"/>
+      <rect x="392" y="96" width="196" height="52" rx="16" class="cardInner"/>
+      <text x="490" y="129" text-anchor="middle" class="label">Validation</text>
+    </g>
+
+    <g>
+      <rect x="140" y="180" width="220" height="56" rx="18" class="card"/>
+      <rect x="142" y="182" width="216" height="52" rx="16" class="cardInner"/>
+      <text x="250" y="215" text-anchor="middle" class="label">Authored Spec</text>
+    </g>
+
+    <g>
+      <rect x="620" y="180" width="174" height="56" rx="18" class="card"/>
+      <rect x="622" y="182" width="170" height="52" rx="16" class="cardInner"/>
+      <text x="707" y="215" text-anchor="middle" class="label">Compiler</text>
+    </g>
+
+    <g>
+      <rect x="240" y="402" width="150" height="56" rx="18" class="card"/>
+      <rect x="242" y="404" width="146" height="52" rx="16" class="cardInner"/>
+      <text x="315" y="437" text-anchor="middle" class="label">Tests</text>
+    </g>
+
+    <g>
+      <rect x="415" y="458" width="150" height="56" rx="18" class="card"/>
+      <rect x="417" y="460" width="146" height="52" rx="16" class="cardInner"/>
+      <text x="490" y="493" text-anchor="middle" class="label">Code</text>
+    </g>
+
+    <g>
+      <rect x="590" y="402" width="150" height="56" rx="18" class="card"/>
+      <rect x="592" y="404" width="146" height="52" rx="16" class="cardInner"/>
+      <text x="665" y="437" text-anchor="middle" class="label">Docs</text>
+    </g>
+  </g>
+</svg>
